@@ -29,8 +29,6 @@ private:
     Vec v_cur;
     double v_max{0}, r{0};
     Monitor *monitor{nullptr};
-    // Use shared info as a global round counter (with caution: each use costs score)
-    // We will read once per decision and write back increment at id==0 to keep it minimal.
 
     // Helper: clamp vector length to max_len
     Vec clamp_speed(const Vec &v, double max_len) const {
@@ -79,12 +77,6 @@ private:
 
 public:
     Vec get_v_next() {
-        // Basic time-slicing using shared info to reduce simultaneous moves
-        long long round_counter = monitor->use_share_info();
-        bool my_turn = ((round_counter & 1LL) == (id & 1LL));
-        if (id == 0) {
-            monitor->write_share_info(round_counter + 1);
-        }
         // If already at target (within EPS), stop.
         if ((pos_cur - pos_tar).norm_sqr() <= EPSILON * EPSILON) {
             return Vec();
@@ -98,11 +90,6 @@ public:
         double desired_speed = std::min(v_max, dist / TIME_INTERVAL);
         Vec v_desired = (dist < 1e-12) ? Vec() : to_tar * (desired_speed / dist);
 
-        // If not my turn, be conservative and reduce speed
-        if (!my_turn) {
-            v_desired = v_desired * 0.4;
-        }
-
         // If current desired leads to no collision, take it.
         if (!will_collide(v_desired)) {
             return v_desired;
@@ -113,7 +100,6 @@ public:
         for (int k = STEPS - 1; k >= 1; --k) {
             double sp = desired_speed * (double)k / (double)STEPS;
             Vec v_try = (dist < 1e-12) ? Vec() : to_tar * (sp / dist);
-            if (!my_turn) v_try = v_try * 0.4;
             if (!will_collide(v_try)) return v_try;
         }
 
@@ -123,10 +109,8 @@ public:
         for (double ang : angles) {
             Vec side = dir.rotate(ang);
             Vec v_try = side * (desired_speed * 0.6);
-            if (!my_turn) v_try = v_try * 0.4;
             if (!will_collide(v_try)) return v_try;
             v_try = side * (desired_speed * 0.3);
-            if (!my_turn) v_try = v_try * 0.4;
             if (!will_collide(v_try)) return v_try;
         }
 
